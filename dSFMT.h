@@ -145,9 +145,13 @@ union W128_T {
     double d[2];
 };
 
-#elif defined(HAVE_SSE2)
-#  include <emmintrin.h>
 
+#elif defined(HAVE_SSE2)
+#if defined(HAVE_AVX2)
+#  include <immintrin.h>
+#else
+#  include <emmintrin.h>
+#endif
 /** 128-bit data structure */
 union W128_T {
     __m128i si;
@@ -170,7 +174,18 @@ typedef union W128_T w128_t;
 
 /** the 128-bit internal state array */
 struct DSFMT_T {
+#if defined(__AVX2__)
+    union {
+        __m256i status_x2[DSFMT_N/2];
+#if defined(__AVX512VL__) 
+        __m512i status_x4[DSFMT_N/4];
+#endif
+        w128_t status[DSFMT_N + 1];
+    };
+#else
     w128_t status[DSFMT_N + 1];
+#endif 
+
     int idx;
 };
 typedef struct DSFMT_T dsfmt_t;

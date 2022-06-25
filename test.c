@@ -111,7 +111,11 @@ static void check(char *range_str, genrand_t genrand, fill_array_t fill_array,
     union W64_T *array = (union W64_T *)dummy;
     union W64_T *plittle = (union W64_T *)little;
     union W64_T r, r_st;
+#if defined(DSFMT_UPDATE_FAST)
+    int lsize = DSFMT_N * 2;
+#else
     int lsize = DSFMT_N * 2 + 2;
+#endif
     dsfmt_t dsfmt;
 
     printf("generated randoms %s\n", range_str);
@@ -196,7 +200,11 @@ static void check_ar(char *range_str, genrand_t genrand,
     union W64_T *array = (union W64_T *)dummy;
     union W64_T *plittle = (union W64_T *)little;
     union W64_T r, r_st;
+#if defined(DSFMT_UPDATE_FAST)
+    int lsize = DSFMT_N * 2;
+#else
     int lsize = DSFMT_N * 2 + 2;
+#endif
     dsfmt_t dsfmt;
     uint32_t ar[4] = {1, 2, 3, 4};
 
