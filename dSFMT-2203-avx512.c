@@ -44,32 +44,22 @@ static void period_certification(dsfmt_t *dsfmt);
  * @param d a 128-bit part of the internal state array (I/O)
  */
 inline static __m512i do_recursion_x4_avx512( __m512i a, __m512i b, __m512i* u) {
+    const __m512i shift128_reverse_idx = 
+        _mm512_setr_epi32(0, 0, 0, 0, 19,18,17,16, 23,22,21,20, 27,26,25,24);
+    const __m512i expand_lung_idx = 
+        _mm512_setr_epi32(15,14,13,12, 12,13,14,15, 15,14,13,12, 12,13,14,15);
+        
     __m512i v, w, x, y, z;
 
     z = _mm512_slli_epi64(a, DSFMT_SL1);
     z = _mm512_xor_si512(z, b);
-    x = _mm512_maskz_permutexvar_epi32((__mmask16)0xFFF0,
-        _mm512_setr_epi32(
-            0, 0, 0, 0,
-            3, 2, 1, 0,
-            7, 6, 5, 4,
-            11, 10, 9, 8
-        ), z
-    );
-    z = _mm512_xor_si512(z, x);
-    x = _mm512_alignr_epi64(z, _mm512_setzero_si512(), 4);
 
-    /* lung */
-    y = _mm512_permutexvar_epi32(
-        _mm512_setr_epi32(
-            15, 14, 13, 12,
-            12, 13, 14, 15,
-            15, 14, 13, 12,
-            12, 13, 14, 15
-        ), _mm512_loadu_epi64(u)
-    );
+    x = _mm512_permutex2var_epi32(_mm512_setzero_si512(),shift128_reverse_idx , z);
+    z = _mm512_xor_si512(z, x);
+    x = _mm512_inserti64x4(_mm512_setzero_si512(), _mm512_castsi512_si256(z), 1);
+    y = _mm512_permutexvar_epi32(expand_lung_idx, _mm512_load_epi64(u));  /* lung */
     y = _mm512_ternarylogic_epi32(y, x, z, 0x96);
-    *u = y;
+    _mm512_store_epi64(u, y);
 
     v = _mm512_srli_epi64(y, DSFMT_SR);
     w = _mm512_and_si512(y, _mm512_broadcast_i32x4(sse2_param_mask.i128));
@@ -134,15 +124,14 @@ inline static void gen_rand_array_avx512(dsfmt_t* dsfmt, w128_t* array,
     ptrdiff_t i;
 
     __m512i v0, v1, v2, v3, v4, lung;
-    v0 = _mm512_loadu_epi64(&dsfmt->status_x4[0]);
-    v1 = _mm512_loadu_epi64(&dsfmt->status_x4[1]);
-    v2 = _mm512_loadu_epi64(&dsfmt->status_x4[2]);
-    v3 = _mm512_loadu_epi64(&dsfmt->status_x4[3]);
-    v4 = _mm512_loadu_epi64(&dsfmt->status_x4[4]);
+    v0 = _mm512_load_epi64(&dsfmt->status_x4[0]);
+    v1 = _mm512_load_epi64(&dsfmt->status_x4[1]);
+    v2 = _mm512_load_epi64(&dsfmt->status_x4[2]);
+    v3 = _mm512_load_epi64(&dsfmt->status_x4[3]);
+    v4 = _mm512_load_epi64(&dsfmt->status_x4[4]);
     lung = _mm512_broadcast_i64x2(dsfmt->status[DSFMT_N].si);
 
-    for (i = 0; i < size; i += DSFMT_N)
-    {
+    for (i = 0; i < size; i += DSFMT_N) {
         v0 = do_recursion_x4_avx512(v0, _mm512_alignr_epi64(v2, v1, 6), &lung);
         _mm512_storeu_pd(&array[i + 0], cvt(v0));
         v1 = do_recursion_x4_avx512(v1, _mm512_alignr_epi64(v3, v2, 6), &lung);
@@ -155,14 +144,13 @@ inline static void gen_rand_array_avx512(dsfmt_t* dsfmt, w128_t* array,
         _mm512_storeu_pd(&array[i + 16], cvt(v4));
     }
 
-    _mm512_storeu_epi64(&dsfmt->status_x4[0], v0);
-    _mm512_storeu_epi64(&dsfmt->status_x4[1], v1);
-    _mm512_storeu_epi64(&dsfmt->status_x4[2], v2);
-    _mm512_storeu_epi64(&dsfmt->status_x4[3], v3);
-    _mm512_storeu_epi64(&dsfmt->status_x4[4], v4);
+    _mm512_store_epi64(&dsfmt->status_x4[0], v0);
+    _mm512_store_epi64(&dsfmt->status_x4[1], v1);
+    _mm512_store_epi64(&dsfmt->status_x4[2], v2);
+    _mm512_store_epi64(&dsfmt->status_x4[3], v3);
+    _mm512_store_epi64(&dsfmt->status_x4[4], v4);
 
     dsfmt->status[DSFMT_N].si = _mm512_extracti64x2_epi64(lung, 3); // last zmm lane
-
 }
 
 /**
@@ -269,22 +257,22 @@ int dsfmt_get_min_array_size(void) {
 void dsfmt_gen_rand_all(dsfmt_t* dsfmt) {
     __m512i v0, v1, v2, v3, v4, lung;
     lung = _mm512_broadcast_i32x4(dsfmt->status[DSFMT_N].si);
-    v0 = dsfmt->status_x4[0];
-    v1 = dsfmt->status_x4[1];
-    v2 = dsfmt->status_x4[2];
-    v3 = dsfmt->status_x4[3];
-    v4 = dsfmt->status_x4[4];
+    v0 = _mm512_load_si512(&dsfmt->status_x4[0]);
+    v1 = _mm512_load_si512(&dsfmt->status_x4[1]);
+    v2 = _mm512_load_si512(&dsfmt->status_x4[2]);
+    v3 = _mm512_load_si512(&dsfmt->status_x4[3]);
+    v4 = _mm512_load_si512(&dsfmt->status_x4[4]);
 
     v0 = do_recursion_x4_avx512(v0, _mm512_alignr_epi64(v2, v1, 6), &lung);
-    dsfmt->status_x4[0] = v0;
+    _mm512_store_si512(&dsfmt->status_x4[0], v0);
     v1 = do_recursion_x4_avx512(v1, _mm512_alignr_epi64(v3, v2, 6), &lung);
-    dsfmt->status_x4[1] = v1;
+    _mm512_store_si512(&dsfmt->status_x4[1], v1);
     v2 = do_recursion_x4_avx512(v2, _mm512_alignr_epi64(v4, v3, 6), &lung);
-    dsfmt->status_x4[2] = v2;
+    _mm512_store_si512(&dsfmt->status_x4[2], v2);
     v3 = do_recursion_x4_avx512(v3, _mm512_alignr_epi64(v0, v4, 6), &lung);
-    dsfmt->status_x4[3] = v3;
+    _mm512_store_si512(&dsfmt->status_x4[3], v3);
     v4 = do_recursion_x4_avx512(v4, _mm512_alignr_epi64(v1, v0, 6), &lung);    
-    dsfmt->status_x4[4] = v4;
+    _mm512_store_si512(&dsfmt->status_x4[4], v4);
 
     dsfmt->status[DSFMT_N].si = _mm512_extracti64x2_epi64(lung, 3);
 }
